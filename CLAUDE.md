@@ -40,9 +40,19 @@ application/
 └─ use_cases/        → Orquestación de lógica de negocio
 
 infrastructure/
-├─ api/              → Entrada HTTP (FastAPI)
+├─ api/              → Entrada HTTP (FastAPI) - Arquitectura Router-Handler
+│  ├─ app.py         → Application Factory (crea FastAPI app)
+│  ├─ dependencies.py → DI Container (singletons, inyección)
+│  ├─ routers/       → Definición de rutas HTTP
+│  │  ├─ wuzapi_router.py
+│  │  └─ chatwoot_router.py
+│  └─ handlers/      → Lógica de procesamiento de webhooks
+│     ├─ base_handler.py    → Template Method Pattern
+│     ├─ wuzapi_handler.py
+│     └─ chatwoot_handler.py
 ├─ chatwoot/         → Salida a Chatwoot (HTTP client)
 ├─ wuzapi/           → Salida a WuzAPI (HTTP client)
+├─ media/            → Descarga multimedia (MediaDownloader)
 └─ persistence/      → Salida a caché (Redis/Memory)
 
 shared/
@@ -52,11 +62,13 @@ shared/
 ### Flujo de Dependencias
 
 ```
-infrastructure/api/webhook.py
+infrastructure/api/routers/wuzapi_router.py
     ↓ usa
-application/use_cases/
+infrastructure/api/handlers/wuzapi_handler.py
+    ↓ usa
+application/use_cases/sync_message_to_chatwoot.py
     ↓ usa (via interfaces)
-domain/ports/
+domain/ports/chatwoot_repository.py
     ↑ implementa
 infrastructure/chatwoot/client.py
 ```

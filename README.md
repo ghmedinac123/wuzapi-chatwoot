@@ -246,11 +246,35 @@ wuzapi-consumer/
 │   │   │                            # Detalles técnicos de implementación
 │   │   │                            # Pueden cambiar sin afectar dominio
 │   │   │
-│   │   ├── 📂 api/                  # Entrada HTTP
-│   │   │   └── webhook.py           # FastAPI webhooks
-│   │   │                            # - POST /webhook/wuzapi
-│   │   │                            # - POST /webhook/chatwoot
-│   │   │                            # - GET /health
+│   │   ├── 📂 api/                  # Entrada HTTP (FastAPI)
+│   │   │   │                        # Arquitectura Router-Handler
+│   │   │   ├── app.py               # Application Factory
+│   │   │   │                        # - Crea instancia FastAPI
+│   │   │   │                        # - Gestiona lifecycle (startup/shutdown)
+│   │   │   │                        # - Registra routers
+│   │   │   │                        # - Configura CORS y middleware
+│   │   │   │
+│   │   │   ├── dependencies.py      # Dependency Injection Container
+│   │   │   │                        # - Crea singletons de clientes
+│   │   │   │                        # - Inyecta dependencias en handlers
+│   │   │   │                        # - Gestiona ciclo de vida de recursos
+│   │   │   │
+│   │   │   ├── 📂 routers/          # Definición de rutas HTTP
+│   │   │   │   ├── wuzapi_router.py     # POST /webhook/wuzapi
+│   │   │   │   └── chatwoot_router.py   # POST /webhook/chatwoot
+│   │   │   │                        # Responsabilidad: Solo recibir HTTP
+│   │   │   │                        # y delegar a handlers
+│   │   │   │
+│   │   │   └── 📂 handlers/         # Lógica de procesamiento
+│   │   │       ├── base_handler.py      # Template Method Pattern
+│   │   │       │                        # Clase base abstracta
+│   │   │       ├── wuzapi_handler.py    # Procesa eventos WuzAPI
+│   │   │       │                        # - Valida userID
+│   │   │       │                        # - Parsea mensajes
+│   │   │       │                        # - Ejecuta sincronización
+│   │   │       └── chatwoot_handler.py  # Procesa eventos Chatwoot
+│   │   │                                # - Valida eventos
+│   │   │                                # - Ejecuta envío a WhatsApp
 │   │   │
 │   │   ├── 📂 chatwoot/             # Salida a Chatwoot
 │   │   │   └── client.py            # Implementa ChatwootRepository
@@ -272,6 +296,13 @@ wuzapi-consumer/
 │   │   │   └── memory_cache.py      # Implementación en memoria
 │   │   │                            # - Fallback sin Redis
 │   │   │                            # - Dict Python simple
+│   │   │
+│   │   ├── 📂 media/                # Descarga de multimedia
+│   │   │   └── media_downloader.py  # MediaDownloader
+│   │   │                            # - Descarga desde WuzAPI
+│   │   │                            # - Usa endpoints oficiales
+│   │   │                            # - Convierte base64 a bytes
+│   │   │                            # - Genera filenames únicos
 │   │   │
 │   │   └── 📂 logging/              # Configuración de logs
 │   │       └── setup.py             # Configuración de logging
@@ -327,6 +358,31 @@ wuzapi-consumer/
 
 - Puede cambiar completamente sin afectar `domain/` o `application/`
 - Ejemplo: cambiar de Redis a Memcached solo requiere crear nuevo adaptador
+
+##### `infrastructure/api/` - Estructura Router-Handler
+
+**Separación de responsabilidades** (clean separation of concerns):
+
+- **app.py**: Application Factory Pattern
+  - Crea instancia de FastAPI con configuración
+  - Gestiona lifecycle (startup/shutdown)
+  - Registra todos los routers
+
+- **dependencies.py**: Dependency Injection Container
+  - Patrón Singleton para clientes HTTP
+  - Inyecta dependencias en handlers y use cases
+  - Facilita testing (fácil mockear)
+
+- **routers/**: Capa HTTP pura
+  - Solo define rutas y recibe requests
+  - NO tiene lógica de negocio
+  - Delega procesamiento a handlers
+
+- **handlers/**: Lógica de procesamiento
+  - Template Method Pattern (base_handler.py)
+  - Valida payloads
+  - Ejecuta use cases
+  - Maneja respuestas HTTP
 
 #### `src/shared/` - Utilidades Transversales
 

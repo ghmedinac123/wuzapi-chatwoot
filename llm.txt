@@ -9,16 +9,20 @@ Python 3.12+ | FastAPI | Arquitectura Hexagonal | SOLID
 
 ### Capas (Hexagonal)
 ```
-infrastructure/api/          → Entrada HTTP (FastAPI webhooks)
+infrastructure/api/          → Entrada HTTP (FastAPI - Arquitectura Router-Handler)
+  ├─ app.py                  → Application Factory
+  ├─ dependencies.py         → DI Container (Singletons)
+  ├─ routers/                → Rutas HTTP (wuzapi_router, chatwoot_router)
+  └─ handlers/               → Lógica procesamiento (base, wuzapi, chatwoot)
 application/use_cases/       → Orquestación lógica negocio
 domain/                      → CORE (entities, value_objects, ports)
-infrastructure/{adaptadores} → Salida (chatwoot, wuzapi, persistence)
+infrastructure/{adaptadores} → Salida (chatwoot, wuzapi, media, persistence)
 shared/                      → Config y utilidades
 ```
 
 ### Flujo de Dependencias
 ```
-api → use_cases → domain/ports ← implementan adaptadores
+routers → handlers → use_cases → domain/ports ← implementan adaptadores
 ```
 
 ### Regla CRÍTICA
@@ -56,9 +60,19 @@ src/
 │  ├─ sync_message_to_chatwoot.py      # WhatsApp → Chatwoot
 │  └─ send_message_to_whatsapp.py      # Chatwoot → WhatsApp
 ├─ infrastructure/
-│  ├─ api/webhook.py                   # POST /webhook/{wuzapi,chatwoot}
+│  ├─ api/                             # Arquitectura Router-Handler
+│  │  ├─ app.py                        # Application Factory
+│  │  ├─ dependencies.py               # DI Container
+│  │  ├─ routers/
+│  │  │  ├─ wuzapi_router.py           # POST /webhook/wuzapi
+│  │  │  └─ chatwoot_router.py         # POST /webhook/chatwoot
+│  │  └─ handlers/
+│  │     ├─ base_handler.py            # Template Method Pattern
+│  │     ├─ wuzapi_handler.py          # Procesa eventos WuzAPI
+│  │     └─ chatwoot_handler.py        # Procesa eventos Chatwoot
 │  ├─ chatwoot/client.py               # Implementa ChatwootRepository
 │  ├─ wuzapi/client.py                 # Implementa WuzAPIRepository
+│  ├─ media/media_downloader.py        # Descarga multimedia
 │  ├─ persistence/
 │  │  ├─ redis_cache.py                # Implementa CacheRepository
 │  │  └─ memory_cache.py               # Fallback
