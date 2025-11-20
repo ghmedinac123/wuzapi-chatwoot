@@ -1,0 +1,348 @@
+# wuzapi-consumer - Contexto para LLMs
+
+## Proyecto
+WuzAPI ↔ Chatwoot Integration
+Integración bidireccional WhatsApp-Chatwoot para Fututel (telecomunicaciones, 5000 clientes)
+Python 3.12+ | FastAPI | Arquitectura Hexagonal | SOLID
+
+## Arquitectura
+
+### Capas (Hexagonal)
+```
+infrastructure/api/          → Entrada HTTP (FastAPI webhooks)
+application/use_cases/       → Orquestación lógica negocio
+domain/                      → CORE (entities, value_objects, ports)
+infrastructure/{adaptadores} → Salida (chatwoot, wuzapi, persistence)
+shared/                      → Config y utilidades
+```
+
+### Flujo de Dependencias
+```
+api → use_cases → domain/ports ← implementan adaptadores
+```
+
+### Regla CRÍTICA
+domain/ NUNCA importa de infrastructure/ o application/
+
+## Principios
+
+### SOLID
+- S: WhatsAppMessage solo representa mensajes
+- O: Extensible vía nuevos adaptadores sin modificar domain
+- L: RedisCache/InMemoryCache intercambiables
+- I: Interfaces pequeñas (ChatwootRepository, WuzAPIRepository)
+- D: UseCase depende de interfaces, no implementaciones
+
+### Desarrollo
+1. NUNCA modificar código que funciona
+2. SIEMPRE extender, nunca reemplazar
+3. Respetar capas (domain independiente)
+4. Dependency Injection siempre
+5. Type hints completos
+6. Logging estructurado con emojis
+
+## Estructura
+
+```
+src/
+├─ domain/
+│  ├─ entities/whatsapp_message.py     # Mensaje con identidad
+│  ├─ value_objects/phone_number.py    # Teléfono inmutable
+│  └─ ports/                           # Interfaces
+│     ├─ chatwoot_repository.py
+│     ├─ wuzapi_repository.py
+│     └─ cache_repository.py
+├─ application/use_cases/
+│  ├─ sync_message_to_chatwoot.py      # WhatsApp → Chatwoot
+│  └─ send_message_to_whatsapp.py      # Chatwoot → WhatsApp
+├─ infrastructure/
+│  ├─ api/webhook.py                   # POST /webhook/{wuzapi,chatwoot}
+│  ├─ chatwoot/client.py               # Implementa ChatwootRepository
+│  ├─ wuzapi/client.py                 # Implementa WuzAPIRepository
+│  ├─ persistence/
+│  │  ├─ redis_cache.py                # Implementa CacheRepository
+│  │  └─ memory_cache.py               # Fallback
+│  └─ logging/setup.py
+└─ shared/config.py                    # Pydantic Settings
+
+main.py                                # Entry point
+```
+
+## Flujos
+
+### WhatsApp → Chatwoot
+```
+1. Cliente envía mensaje WhatsApp
+2. WuzAPI webhook → POST /webhook/wuzapi
+3. Valida TOKEN
+4. Parse → WhatsAppMessage entity
+5. SyncMessageToChatwootUseCase:
+   a. create_or_get_contact()
+   b. create_or_get_conversation()
+   c. send_message()
+6. Mensaje en Chatwoot Inbox
+```
+
+### Chatwoot → WhatsApp
+```
+1. Agente responde en Chatwoot
+2. Chatwoot webhook → POST /webhook/chatwoot
+3. SendMessageToWhatsAppUseCase:
+   a. Valida message_type: outgoing
+   b. Extrae teléfono y contenido
+   c. send_text_message() via WuzAPI
+4. Cliente recibe en WhatsApp
+```
+
+## Datos
+
+### WuzAPI Event (Nuevo Formato)
+```json
+{
+  "type": "Message",
+  "token": "CCE6198C6E2D-43A0-A4A9-598F53FE5C38",
+  "event": {
+    "Info": {
+      "ID": "MSG_ID",
+      "Chat": "573164973474@s.whatsapp.net",
+      "IsFromMe": false,
+      "Type": "text",
+      "Timestamp": "2025-10-27T15:01:14-05:00"
+    },
+    "Message": {
+      "extendedTextMessage": {
+        "text": "Contenido del mensaje"
+      }
+    }
+  }
+}
+```
+
+### Chatwoot Event
+```json
+{
+  "event": "message_created",
+  "message": {
+    "message_type": "outgoing",
+    "content": "Respuesta del agente"
+  },
+  "conversation": {
+    "inbox_id": 29,
+    "contact_inbox": {
+      "source_id": "573001234567"
+    }
+  }
+}
+```
+
+## Configuración (.env)
+
+```properties
+# Servidor
+PORT=8789
+HOST=0.0.0.0
+BACKEND_URL=integracion.wuzapi.torneofututel.com
+
+# Chatwoot
+CHATWOOT_URL=https://chatwoot.fututel.com
+CHATWOOT_API_KEY=xxx
+CHATWOOT_ACCOUNT_ID=2
+CHATWOOT_INBOX_ID=29
+
+# WuzAPI
+WUZAPI_URL=https://wuzapi.torneofututel.com
+WUZAPI_USER_TOKEN=xxx
+WUZAPI_INSTANCE_TOKEN=CCE6198C6E2D-43A0-A4A9-598F53FE5C38
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+```
+
+## Operación
+
+### Comandos
+```bash
+# Servicio
+systemctl start wuzapi-chatwoot-integration
+systemctl status wuzapi-chatwoot-integration
+journalctl -u wuzapi-chatwoot-integration -f
+
+# Health check
+curl https://integracion.wuzapi.torneofututel.com/health
+
+# Desarrollo
+uv run python main.py
+```
+
+### Logs Típicos
+```
+📥 EVENTO WUZAPI: Message | Token: CCE6198C...
+✅ Mensaje parseado: De +573001234567
+📨 Sincronizando mensaje de 573001234567
+✅ Contacto creado: ID 123
+✅ Conversación creada: 456 (Inbox: 29)
+✅ Mensaje enviado a conversación 456
+```
+
+## Agregar Funcionalidad
+
+### Template
+```python
+# PASO 1: Extender Port (interfaz)
+# src/domain/ports/wuzapi_repository.py
+class WuzAPIRepository(ABC):
+    @abstractmethod
+    async def send_NEW_TYPE_message(...) -> bool:
+        pass
+
+# PASO 2: Implementar en Adaptador
+# src/infrastructure/wuzapi/client.py
+class WuzAPIClient(WuzAPIRepository):
+    async def send_NEW_TYPE_message(...) -> bool:
+        # Implementación
+        pass
+
+# PASO 3: Usar en UseCase (si aplica)
+# src/application/use_cases/send_message_to_whatsapp.py
+async def execute(self, event_data):
+    # Detectar y usar nuevo tipo
+    pass
+```
+
+### Ejemplo: Enviar Imágenes
+```python
+# Port
+async def send_image_message(phone: str, image_url: str, caption: str) -> bool:
+    pass
+
+# Adaptador
+async def send_image_message(phone, image_url, caption):
+    data = {'phone': f"{phone}@s.whatsapp.net", 'image': image_url, 'caption': caption}
+    response = await self.client.post('/message/image', json=data)
+    return response.status_code in [200, 201]
+
+# UseCase
+attachments = message_data.get('attachments', [])
+if attachments and attachments[0].get('file_type') == 'image':
+    return await self.wuzapi_repo.send_image_message(phone, url, caption)
+```
+
+## Debugging
+
+### Errores Comunes
+
+**"Evento de instancia Unknown ignorado"**
+- Causa: TOKEN no coincide
+- Fix: Verificar WUZAPI_INSTANCE_TOKEN en .env
+
+**"Could not parse message"**
+- Causa: Formato de mensaje nuevo/no soportado
+- Fix: Ver JSON completo en logs, agregar caso en WhatsAppMessage.from_wuzapi_event()
+
+**"Redis no disponible"**
+- No crítico: usa caché en memoria automáticamente
+- Fix (opcional): systemctl start redis
+
+## Glosario
+
+- **WuzAPI**: API WhatsApp Business multi-sesión
+- **Chatwoot**: Plataforma customer service
+- **Inbox**: Buzón en Chatwoot (ej: Ventas ID=29)
+- **Instance/Token**: Sesión WhatsApp en WuzAPI
+- **JID**: WhatsApp ID (573001234567@s.whatsapp.net)
+- **Conversation**: Hilo de mensajes
+- **Entity**: Objeto con identidad (WhatsAppMessage)
+- **Value Object**: Objeto inmutable (PhoneNumber)
+- **Port**: Interfaz que define QUÉ hacer
+- **Adapter**: Implementación que define CÓMO hacerlo
+- **Use Case**: Orquestación de lógica de negocio
+
+## Filosofía
+
+**Regla de Oro**: Si funciona, NO se toca.
+
+```
+Antes de cambiar:
+1. ¿Funciona? → NO cambiar
+2. ¿Nueva funcionalidad? → AGREGAR, no modificar
+3. ¿Bug? → Fix mínimo
+4. ¿Mejora arquitectura? → Solo si no afecta existente
+```
+
+## Stack Técnico
+
+- Python 3.12+
+- FastAPI 0.104+
+- httpx (HTTP async client)
+- Pydantic 2.x (settings + validation)
+- Redis 7+ (opcional)
+- uv (package manager)
+- Nginx + Let's Encrypt (producción)
+- Systemd (supervisor)
+
+## Endpoints
+
+```
+GET  /              → Info del servicio
+GET  /health        → Health check
+POST /webhook/wuzapi    → Recibe eventos WuzAPI
+POST /webhook/chatwoot  → Recibe eventos Chatwoot
+```
+
+## Producción
+
+- **Dominio**: integracion.wuzapi.torneofututel.com
+- **SSL**: Let's Encrypt (auto-renew)
+- **Puerto**: 8789 (interno), 443 (público HTTPS)
+- **OS**: Ubuntu 24.04 LTS
+- **Servidor**: VPS Proxmox
+
+## Seguridad
+
+### NUNCA en logs
+- CHATWOOT_API_KEY
+- WUZAPI_USER_TOKEN
+- WUZAPI_INSTANCE_TOKEN
+
+### OK en logs
+- URLs públicas
+- Números de teléfono (públicos en contexto)
+
+### Validación TOKEN
+```python
+if token != settings.WUZAPI_INSTANCE_TOKEN:
+    logger.warning(f"Token inválido: {token}")
+    return  # Ignorar
+```
+
+## Testing
+
+```bash
+# Manual
+1. Enviar mensaje WhatsApp
+2. Ver logs: journalctl -u wuzapi-chatwoot-integration -f
+3. Verificar llegada a Chatwoot
+4. Responder en Chatwoot
+5. Verificar llegada a WhatsApp
+
+# Webhook test
+curl -X POST https://integracion.wuzapi.torneofututel.com/webhook/wuzapi \
+  -H "Content-Type: application/json" \
+  -d '{"type":"Message","token":"TOKEN_AQUI"}'
+```
+
+## Referencias
+
+- Hexagonal Architecture: Alistair Cockburn (2005)
+- SOLID: Robert C. Martin
+- DDD: Eric Evans
+
+## Contacto
+
+- Fututel Programación
+- WhatsApp: +57 316 497 3474
+- Email: soporte@fututel.com
+
+---
+Versión: 2.0.0
+Actualizado: 2025-10-27

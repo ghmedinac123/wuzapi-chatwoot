@@ -1,0 +1,25 @@
+
+
+services:
+  integration:
+    build: .
+    container_name: wuzapi-chatwoot-ventas
+    ports:
+      - "8789:8789"
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: wuzapi-chatwoot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
