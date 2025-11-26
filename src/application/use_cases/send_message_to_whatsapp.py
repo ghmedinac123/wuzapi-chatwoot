@@ -114,8 +114,9 @@ class SendMessageToWhatsAppUseCase:
             logger.info(f"⏭️  Ignorado: privado")
             return False
         
-        if sender.get('type') != 'user':
-            logger.info(f"⏭️  Ignorado: sender.type != user")
+        sender_type = sender.get('type', '')
+        if sender_type not in ('user', 'agent_bot'):
+            logger.info(f"⏭️  Ignorado: sender.type={sender_type} (no es user ni agent_bot)")
             return False
         
         logger.info(f"✅ Válido - enviar a WhatsApp")
