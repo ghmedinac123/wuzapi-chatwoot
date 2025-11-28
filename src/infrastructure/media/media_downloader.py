@@ -14,7 +14,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
-MediaType = Literal['audio', 'image', 'video', 'document']
+MediaType = Literal['audio', 'image', 'video', 'document', 'sticker']
 
 
 class MediaDownloader:
@@ -107,12 +107,12 @@ class MediaDownloader:
             return None
     
     def _get_endpoint(self, media_type: MediaType) -> str:
-        """Endpoint según tipo"""
         endpoints = {
             'audio': '/chat/downloadaudio',
             'image': '/chat/downloadimage',
             'video': '/chat/downloadvideo',
-            'document': '/chat/downloaddocument'
+            'document': '/chat/downloaddocument',
+            'sticker': '/chat/downloadsticker'  # 🔥 NUEVO
         }
         return endpoints[media_type]
     

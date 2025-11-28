@@ -3,10 +3,10 @@ src/infrastructure/wuzapi/client.py
 Cliente HTTP para comunicación con WuzAPI
 """
 import logging
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal,List
 import httpx
 from urllib.parse import urlencode
-
+import base64 
 
 logger = logging.getLogger(__name__)
 
@@ -179,51 +179,144 @@ class WuzAPIClient:
             return False
     
     async def send_video_message(self, phone: str, video_url: str, caption: str = "") -> bool:
+        """Envía video a través de WuzAPI."""
         try:
-            phone_clean = phone.replace('+', '').replace('@s.whatsapp.net', '')
-            recipient = f"{phone_clean}@s.whatsapp.net"
+            phone_clean = phone.replace('+', '')
             
-            response = await self.client.post("/message/video", json={
-                'phone': recipient,
-                'video': video_url,
-                'caption': caption or ''
-            })
+            url = "/chat/send/video"
             
-            return response.status_code in [200, 201]
+            data = {
+                'Phone': phone_clean,
+                'Video': video_url,
+                'Caption': caption or ''
+            }
+            
+            headers = {
+                'token': self.instance_token,
+                'Content-Type': 'application/json'
+            }
+            
+            logger.info(f"📤 Enviando video a {phone_clean}")
+            logger.info(f"📍 URL: {url}")
+            
+            response = await self.client.post(url, json=data, headers=headers)
+            
+            logger.info(f"📡 Status: {response.status_code}")
+            logger.info(f"📡 Response: {response.text[:200]}")
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"✅ Video enviado")
+                return True
+            else:
+                logger.error(f"❌ Error: {response.status_code} - {response.text}")
+                return False
+                
         except Exception as e:
-            logger.error(f"❌ Error enviando video: {e}", exc_info=True)
+            logger.error(f"❌ Excepción enviando video: {e}", exc_info=True)
             return False
-    
-    async def send_audio_message(self, phone: str, audio_url: str) -> bool:
-        try:
-            phone_clean = phone.replace('+', '').replace('@s.whatsapp.net', '')
-            recipient = f"{phone_clean}@s.whatsapp.net"
-            
-            response = await self.client.post("/message/audio", json={
-                'phone': recipient,
-                'audio': audio_url
-            })
-            
-            return response.status_code in [200, 201]
-        except Exception as e:
-            logger.error(f"❌ Error enviando audio: {e}", exc_info=True)
-            return False
-    
+
     async def send_document_message(self, phone: str, document_url: str, filename: str) -> bool:
+        """Envía documento a través de WuzAPI."""
         try:
-            phone_clean = phone.replace('+', '').replace('@s.whatsapp.net', '')
-            recipient = f"{phone_clean}@s.whatsapp.net"
+            phone_clean = phone.replace('+', '')
             
-            response = await self.client.post("/message/document", json={
-                'phone': recipient,
-                'document': document_url,
-                'fileName': filename
-            })
+            url = "/chat/send/document"
             
-            return response.status_code in [200, 201]
+            data = {
+                'Phone': phone_clean,
+                'Document': document_url,
+                'FileName': filename
+            }
+            
+            headers = {
+                'token': self.instance_token,
+                'Content-Type': 'application/json'
+            }
+            
+            logger.info(f"📤 Enviando documento a {phone_clean}")
+            logger.info(f"📍 URL: {url}")
+            logger.info(f"📄 Filename: {filename}")
+            
+            response = await self.client.post(url, json=data, headers=headers)
+            
+            logger.info(f"📡 Status: {response.status_code}")
+            logger.info(f"📡 Response: {response.text[:200]}")
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"✅ Documento enviado")
+                return True
+            else:
+                logger.error(f"❌ Error: {response.status_code} - {response.text}")
+                return False
+                
         except Exception as e:
-            logger.error(f"❌ Error enviando documento: {e}", exc_info=True)
+            logger.error(f"❌ Excepción enviando documento: {e}", exc_info=True)
             return False
+    
+    async def send_audio_message(
+        self, 
+        phone: str, 
+        audio_bytes: bytes,
+        mime_type: str = 'audio/ogg; codecs=opus',
+        seconds: int = 0,  # 🔥 NUEVO,
+        waveform: List[int] = None  # 🔥 NUEVO
+    ) -> bool:
+        """
+        Envía audio a través de WuzAPI.
+        
+        IMPORTANTE: El audio DEBE estar en formato OGG Opus para PTT.
+        La conversión debe hacerse ANTES de llamar a este método.
+        
+        Args:
+            phone: Número de teléfono
+            audio_bytes: Bytes del audio (ya convertido a OGG)
+            mime_type: MIME type del audio
+        """
+        try:
+            phone_clean = phone.replace('+', '')
+            
+            logger.info(f"📤 Enviando audio a {phone_clean}")
+            logger.info(f"📦 Tamaño: {len(audio_bytes)} bytes")
+            logger.info(f"📦 MimeType: {mime_type}")
+            
+            # Convertir a base64
+            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+            data_uri = f"data:audio/ogg;base64,{audio_base64}"
+            
+            url = "/chat/send/audio"
+            data = {
+                'Phone': phone_clean,
+                'Audio': data_uri,
+                'PTT': True,
+                'MimeType': mime_type,
+                'Seconds': seconds ,  # 🔥 NUEVO
+                'Waveform': waveform  # 🔥 NUEVO
+            }
+            
+            headers = {
+                'token': self.instance_token,
+                'Content-Type': 'application/json'
+            }
+            
+            logger.info(f"📍 URL: {url}")
+            logger.info(f"🎤 PTT: True")
+            
+            response = await self.client.post(url, json=data, headers=headers)
+            
+            logger.info(f"📡 Status: {response.status_code}")
+            logger.info(f"📡 Response: {response.text[:200]}")
+            
+            if response.status_code in [200, 201]:
+                logger.info(f"✅ Audio enviado")
+                return True
+            else:
+                logger.error(f"❌ Error: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Excepción: {e}", exc_info=True)
+            return False
+    
     
     # ==================== MÉTODOS DE DESCARGA ====================
     

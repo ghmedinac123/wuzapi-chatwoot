@@ -13,6 +13,7 @@ class MessageType(str, Enum):
     LOCATION = "location"
     CONTACT = "contact"
     PTT = "ptt"
+    REACTION = "reaction"  # 🔥 NUEVO
     UNKNOWN = "unknown"
 
 TYPE_MAPPINGS: Dict[str, MessageType] = {
@@ -26,5 +27,7 @@ TYPE_MAPPINGS: Dict[str, MessageType] = {
     'stickerMessage': MessageType.STICKER,
     'locationMessage': MessageType.LOCATION,
     'contactMessage': MessageType.CONTACT,
+    'reactionMessage': MessageType.REACTION,  # 🔥 NUEVO
+    'reaction': MessageType.REACTION,  # 🔥 NUEVO (por Info.Type)
     'url': MessageType.TEXT,
 }

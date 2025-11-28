@@ -111,9 +111,8 @@ class SyncMessageToChatwootUseCase:
             success = False
             
             # MULTIMEDIA
-            if message.message_type in [MessageType.IMAGE, MessageType.VIDEO, MessageType.AUDIO, MessageType.PTT, MessageType.DOCUMENT]:
+            if message.message_type in [MessageType.IMAGE, MessageType.VIDEO, MessageType.AUDIO, MessageType.PTT, MessageType.DOCUMENT, MessageType.STICKER]:
                 success = await self._process_multimedia_message(message, conversation_id, message_type)
-            
             # TEXTO
             elif message.message_type == MessageType.TEXT:
                 content = message.extract_text_content()
@@ -132,6 +131,27 @@ class SyncMessageToChatwootUseCase:
                         logger.info(f"🔒 Cacheado {chatwoot_msg_id}")
                     
                     success = chatwoot_msg_id is not None
+
+                        # UBICACIÓN
+            elif message.message_type == MessageType.LOCATION:
+                location_info = message.extract_location_info()
+                if location_info:
+                    content = f"📍 Ubicación: {location_info['url']}"
+                else:
+                    content = "[LOCATION - Error]"
+                
+                if message.is_group:
+                    sender_name = message.metadata.get('sender_name', 'Usuario')
+                    content = f"**{sender_name}:** {content}"
+                
+                chatwoot_msg_id = await self.chatwoot.send_message(conversation_id, content, message_type)
+                
+                if chatwoot_msg_id and message.is_from_me:
+                    cache_key = f"synced_to_chatwoot:{chatwoot_msg_id}"
+                    await self.cache.set_conversation_id(cache_key, "1", ttl=60)
+                    logger.info(f"🔒 Cacheado {chatwoot_msg_id}")
+                
+                success = chatwoot_msg_id is not None        
             
             # OTROS
             else:
@@ -171,7 +191,8 @@ class SyncMessageToChatwootUseCase:
                 MessageType.VIDEO: 'video',
                 MessageType.AUDIO: 'audio',
                 MessageType.PTT: 'audio',
-                MessageType.DOCUMENT: 'document'
+                MessageType.DOCUMENT: 'document',
+                MessageType.STICKER: 'sticker'  # ✅ Usa endpoint de sticker
             }
             
             media_type = media_type_map.get(message.message_type)

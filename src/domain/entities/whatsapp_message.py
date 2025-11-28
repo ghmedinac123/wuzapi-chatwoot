@@ -196,7 +196,8 @@ class WhatsAppMessage:
                 MessageType.VIDEO: 'videoMessage',
                 MessageType.AUDIO: 'audioMessage',
                 MessageType.PTT: 'audioMessage',
-                MessageType.DOCUMENT: 'documentMessage'
+                MessageType.DOCUMENT: 'documentMessage',
+                MessageType.STICKER: 'stickerMessage'  # 🔥 NUEVO
             }
             
             key = type_keys.get(self.message_type)
@@ -311,3 +312,54 @@ class WhatsAppMessage:
         except Exception as e:
             logger.error(f"❌ Error parseando mensaje: {e}", exc_info=True)
             return None
+        
+
+
+
+    def extract_sticker_info(self) -> Optional[Dict[str, str]]:
+        """Extrae información de un sticker"""
+        try:
+            if self.message_type != MessageType.STICKER:
+                return None
+            
+            message_data = self.raw_data.get('event', {}).get('Message', {})
+            sticker_msg = message_data.get('stickerMessage', {})
+            
+            if not sticker_msg:
+                return None
+            
+            return {
+                'url': sticker_msg.get('URL', ''),
+                'mimetype': sticker_msg.get('mimetype', 'image/webp'),
+                'fileLength': str(sticker_msg.get('fileLength', 0))
+            }
+        except Exception as e:
+            logger.error(f"❌ Error extrayendo sticker: {e}")
+            return None
+
+
+    def extract_location_info(self) -> Optional[Dict[str, Any]]:
+        """Extrae coordenadas de ubicación"""
+        try:
+            if self.message_type != MessageType.LOCATION:
+                return None
+            
+            message_data = self.raw_data.get('event', {}).get('Message', {})
+            location_msg = message_data.get('locationMessage', {})
+            
+            if not location_msg:
+                return None
+            
+            lat = location_msg.get('degreesLatitude')
+            lng = location_msg.get('degreesLongitude')
+            
+            if lat is None or lng is None:
+                return None
+            
+            return {
+                'latitude': lat,
+                'longitude': lng,
+                'url': f"https://www.google.com/maps?q={lat},{lng}"
+            }
+        except Exception:
+            return None        

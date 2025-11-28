@@ -1,5 +1,3 @@
-
-
 services:
   integration:
     build: .
@@ -7,7 +5,7 @@ services:
     ports:
       - "8789:8789"
     env_file:
-      - .env
+      - .env.production    # ← Cambiar aquí
     depends_on:
       - redis
     restart: unless-stopped
