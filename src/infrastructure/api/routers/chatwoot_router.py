@@ -66,7 +66,7 @@ async def receive_chatwoot_event(
     """
     # Extraer payload JSON
     event_data = await request.json()
-    # logger.info(f"📋 Evento recibido Chatwoot: {json.dumps(event_data, indent=2)}")
+    logger.info(f"📋 Evento recibido Chatwoot: {json.dumps(event_data, indent=2)}")
     
     # Delegar todo el procesamiento al handler
     # Handler se encarga de:

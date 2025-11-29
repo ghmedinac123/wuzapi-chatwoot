@@ -67,8 +67,8 @@ async def receive_wuzapi_event(
     # Extraer payload JSON
     event_data = await request.json()
     
-    # Log del evento recibido
-    logger.info(f"📋 Evento recibido Wuzapi: {json.dumps(event_data, indent=2)}")
+    # # Log del evento recibido
+    # logger.info(f"📋 Evento recibido Wuzapi: {json.dumps(event_data, indent=2)}")
     # Delegar todo el procesamiento al handler
     # Handler se encarga de:
     # - Validación
