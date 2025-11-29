@@ -26,7 +26,10 @@ from ...application.use_cases.send_message_to_whatsapp import SendMessageToWhats
 from .handlers.wuzapi_handler import WuzAPIWebhookHandler
 from .handlers.chatwoot_handler import ChatwootWebhookHandler
 from ...infrastructure.media.audio_converter import FFmpegAudioConverter 
-
+from ...infrastructure.chatwoot.session_notifier import ChatwootSessionNotifier
+from ...application.use_cases.handle_qr_event import HandleQREventUseCase
+from ...infrastructure.wuzapi.session_client import WuzAPISessionClient
+from ...application.use_cases.handle_session_command import HandleSessionCommandUseCase
 logger = logging.getLogger(__name__)
 
 # ==================== CONFIGURACIÓN ====================
@@ -52,6 +55,8 @@ _wuzapi_client: Optional[WuzAPIClient] = None
 _cache_client = None
 _media_downloader: Optional[MediaDownloader] = None
 _audio_converter: Optional[FFmpegAudioConverter] = None  # 🔥 NUEVO
+_session_notifier: Optional[ChatwootSessionNotifier] = None
+_session_client: Optional[WuzAPISessionClient] = None
 
 
 def get_chatwoot_client() -> ChatwootClient:
@@ -177,18 +182,15 @@ async def get_sync_to_chatwoot_use_case() -> SyncMessageToChatwootUseCase:
 async def get_send_to_whatsapp_use_case() -> SendMessageToWhatsAppUseCase:
     """
     Retorna instancia de SendMessageToWhatsAppUseCase.
-    
-    Inyecta:
-    - WuzAPIClient (para enviar mensajes a WhatsApp)
-    - CacheClient (para deduplicación de mensajes) 🔥
-    
-    Returns:
-        Instancia del caso de uso con dependencias inyectadas
     """
+    settings = get_settings()  # 🔥 AGREGAR ESTA LÍNEA
+    
     return SendMessageToWhatsAppUseCase(
         wuzapi_repo=get_wuzapi_client(),
         cache_repo=await get_cache_client(),
-        audio_converter=get_audio_converter()  # 🔥 NUEVO
+        audio_converter=get_audio_converter(),
+        command_use_case=get_command_use_case(),
+        session_source_id=settings.WUZAPI_SESSION_SOURCE_ID
     )
 
 
@@ -197,20 +199,15 @@ async def get_send_to_whatsapp_use_case() -> SendMessageToWhatsAppUseCase:
 async def get_wuzapi_handler() -> WuzAPIWebhookHandler:
     """
     Retorna instancia de WuzAPIWebhookHandler.
-    
-    Inyecta:
-    - SyncMessageToChatwootUseCase
-    - expected_instance_id (para validación)
-    
-    Returns:
-        Handler configurado para procesar webhooks de WuzAPI
     """
     settings = get_settings()
     sync_use_case = await get_sync_to_chatwoot_use_case()
     
     return WuzAPIWebhookHandler(
         sync_use_case=sync_use_case,
-        expected_instance_id=settings.WUZAPI_INSTANCE_ID
+        expected_instance_id=settings.WUZAPI_INSTANCE_ID,
+        qr_use_case=get_qr_use_case(),              # 🔥 NUEVO
+        session_notifier=get_session_notifier()     # 🔥 NUEVO
     )
 
 
@@ -276,3 +273,56 @@ def get_audio_converter() -> FFmpegAudioConverter:
         else:
             logger.warning("⚠️  FFmpeg NO disponible - audios se enviarán como documento")
     return _audio_converter
+
+
+def get_session_notifier() -> ChatwootSessionNotifier:
+    """
+    Retorna instancia de SessionNotifier (singleton).
+    """
+    global _session_notifier
+    
+    if _session_notifier is None:
+        settings = get_settings()
+        _session_notifier = ChatwootSessionNotifier(
+            chatwoot_client=get_chatwoot_client(),
+            contact_name=settings.WUZAPI_SESSION_CONTACT_NAME,
+            source_id=settings.WUZAPI_SESSION_SOURCE_ID
+        )
+        logger.info("✅ SessionNotifier inicializado")
+    
+    return _session_notifier
+
+
+def get_qr_use_case() -> HandleQREventUseCase:
+    """
+    Retorna instancia de HandleQREventUseCase.
+    """
+    return HandleQREventUseCase(notifier=get_session_notifier())
+
+
+def get_session_client() -> WuzAPISessionClient:
+    """
+    Retorna instancia de WuzAPISessionClient (singleton).
+    """
+    global _session_client
+    
+    if _session_client is None:
+        settings = get_settings()
+        _session_client = WuzAPISessionClient(
+            base_url=settings.WUZAPI_URL,
+            user_token=settings.WUZAPI_USER_TOKEN,
+            instance_token=settings.WUZAPI_INSTANCE_TOKEN  # 🔥 AGREGAR
+        )
+        logger.info("✅ WuzAPISessionClient inicializado")
+    
+    return _session_client
+
+
+def get_command_use_case() -> HandleSessionCommandUseCase:
+    """
+    Retorna instancia de HandleSessionCommandUseCase.
+    """
+    return HandleSessionCommandUseCase(
+        session_repo=get_session_client(),
+        notifier=get_session_notifier()
+    )    

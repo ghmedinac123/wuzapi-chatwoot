@@ -31,16 +31,22 @@ class WuzAPIWebhookHandler(BaseWebhookHandler):
     def __init__(
         self,
         sync_use_case: SyncMessageToChatwootUseCase,
-        expected_instance_id: str
+        expected_instance_id: str,
+        qr_use_case = None,           # 🔥 NUEVO
+        session_notifier = None        # 🔥 NUEVO
     ):
         """
         Args:
             sync_use_case: Caso de uso para sincronizar a Chatwoot
-            expected_instance_id: ID de instancia WuzAPI esperado (validación)
+            expected_instance_id: ID de instancia WuzAPI esperado
+            qr_use_case: Caso de uso para manejar QR (opcional)
+            session_notifier: Notificador de sesión (opcional)
         """
         super().__init__(handler_name="WuzAPI")
         self.sync_use_case = sync_use_case
         self.expected_instance_id = expected_instance_id
+        self.qr_use_case = qr_use_case              # 🔥 NUEVO
+        self.session_notifier = session_notifier    # 🔥 NUEVO
     
     def _validate_payload(self, event_data: Dict[str, Any]) -> bool:
         """
@@ -95,6 +101,19 @@ class WuzAPIWebhookHandler(BaseWebhookHandler):
                     "received": user_id
                 }
             }
+        
+
+                
+        # 2. ========== NUEVO: Manejar eventos de sesión ==========
+        if event_type == 'QR':
+            return await self._handle_qr_event(event_data)
+        
+        if event_type in ('Connected', 'LoggedIn'):
+            return await self._handle_connected_event(event_data)
+        
+        if event_type in ('Disconnected', 'LoggedOut'):
+            return await self._handle_disconnected_event(event_data)
+        # ========== FIN NUEVO ==========
         
         # 2. Validar tipo de evento
         if event_type != 'Message':
@@ -212,3 +231,46 @@ class WuzAPIWebhookHandler(BaseWebhookHandler):
         except Exception as e:
             self.logger.error(f"❌ Excepción en sincronización: {e}", exc_info=True)
             return False
+
+
+
+    async def _handle_qr_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Procesa evento QR - Notifica a Chatwoot"""
+        self.logger.info("📱 Evento QR recibido")
+        
+        if not self.qr_use_case:
+            self.logger.warning("⚠️  QR UseCase no configurado")
+            return {"success": False, "reason": "qr_usecase_not_configured"}
+        
+        success = await self.qr_use_case.execute(event_data)
+        
+        if success:
+            self.logger.info("✅ QR enviado a Chatwoot")
+            return {"success": True, "data": {"event": "qr_notified"}}
+        else:
+            self.logger.error("❌ Error enviando QR")
+            return {"success": False, "reason": "qr_notification_failed"}
+    
+    async def _handle_connected_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Procesa evento Connected"""
+        self.logger.info("✅ Sesión conectada")
+        
+        if self.session_notifier:
+            from ....domain.entities.wuzapi_session import WuzAPISession
+            from ....domain.value_objects.session_status import SessionStatus
+            session = WuzAPISession.from_connection_event(event_data, SessionStatus.CONNECTED)
+            await self.session_notifier.notify_connected(session)
+        
+        return {"success": True, "data": {"event": "connected"}}
+    
+    async def _handle_disconnected_event(self, event_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Procesa evento Disconnected"""
+        self.logger.info("🔴 Sesión desconectada")
+        
+        if self.session_notifier:
+            from ....domain.entities.wuzapi_session import WuzAPISession
+            from ....domain.value_objects.session_status import SessionStatus
+            session = WuzAPISession.from_connection_event(event_data, SessionStatus.DISCONNECTED)
+            await self.session_notifier.notify_disconnected(session)
+        
+        return {"success": True, "data": {"event": "disconnected"}}        

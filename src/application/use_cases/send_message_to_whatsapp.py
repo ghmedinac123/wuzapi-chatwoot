@@ -29,11 +29,15 @@ class SendMessageToWhatsAppUseCase:
         self, 
         wuzapi_repo: WuzAPIRepository, 
         cache_repo: CacheRepository,
-        audio_converter: Optional[AudioConverterPort] = None
+        audio_converter: Optional[AudioConverterPort] = None,
+        command_use_case = None,           # 🔥 NUEVO
+        session_source_id: str = ""        # 🔥 NUEVO
     ):
         self.wuzapi = wuzapi_repo
         self.cache = cache_repo
         self.audio_converter = audio_converter
+        self.command_use_case = command_use_case      # 🔥 NUEVO
+        self.session_source_id = session_source_id    # 🔥 NUEVO
     
     async def execute(self, event_data: Dict[str, Any]) -> bool:
         """Punto de entrada principal del Use Case"""
@@ -43,6 +47,10 @@ class SendMessageToWhatsAppUseCase:
             logger.info("=" * 70)
             logger.info(f"📤 MENSAJE DESDE CHATWOOT → WHATSAPP (ID: {message_id})")
             logger.info("=" * 70)
+
+                        # 🔥 NUEVO: Verificar si es comando del bot de sesión
+            if await self._is_session_command(event_data):
+                return await self._handle_session_command(event_data)
             
             # Anti-loop: verificar si ya procesamos este mensaje
             if message_id:
@@ -324,3 +332,67 @@ class SendMessageToWhatsAppUseCase:
         except Exception as e:
             logger.error(f"❌ Error en fallback documento: {e}")
             return False
+        
+
+
+    # ==================== COMANDOS DE SESIÓN ====================
+    
+    async def _is_session_command(self, event_data: Dict[str, Any]) -> bool:
+        """
+        Verifica si el mensaje es del bot de sesión.
+        
+        🔥 CRÍTICO: Si es del bot, SIEMPRE retorna True para
+        evitar que cualquier mensaje vaya a WhatsApp.
+        """
+        if not self.session_source_id:
+            return False
+        
+        conversation = event_data.get('conversation', {})
+        contact_inbox = conversation.get('contact_inbox', {})
+        source_id = contact_inbox.get('source_id', '')
+        
+        # 🔥 Si es la conversación del bot, SIEMPRE interceptar
+        if source_id == self.session_source_id:
+            logger.info("🤖 Mensaje del bot de sesión - NO enviar a WhatsApp")
+            return True
+        
+        return False
+    
+    async def _handle_session_command(self, event_data: Dict[str, Any]) -> bool:
+        """
+        Procesa comando de sesión.
+        
+        🔥 SIEMPRE retorna True para evitar que el mensaje
+        continúe hacia WhatsApp.
+        """
+        try:
+            # Solo procesar si es mensaje outgoing (admin escribe)
+            message_type = event_data.get('message_type', '')
+            if message_type != 'outgoing':
+                logger.info("ℹ️  Mensaje incoming del bot - ignorando")
+                return True  # 🔥 Retornar True para NO enviar a WhatsApp
+            
+            content = event_data.get('content', '')
+            conversation = event_data.get('conversation', {})
+            conversation_id = conversation.get('id')
+            
+            if not conversation_id or not content:
+                logger.info("ℹ️  Sin contenido o conversation_id")
+                return True  # 🔥 Retornar True para NO enviar a WhatsApp
+            
+            # Solo procesar si hay command_use_case
+            if not self.command_use_case:
+                logger.warning("⚠️  command_use_case no configurado")
+                return True  # 🔥 Retornar True para NO enviar a WhatsApp
+            
+            logger.info(f"🎯 Comando: {content}")
+            logger.info(f"💬 Conv ID: {conversation_id}")
+            
+            await self.command_use_case.execute(content, conversation_id)
+            
+            logger.info("=" * 70)
+            return True  # 🔥 SIEMPRE True
+            
+        except Exception as e:
+            logger.error(f"❌ Error procesando comando: {e}")
+            return True  # 🔥 SIEMPRE True - nunca enviar a WhatsApp 

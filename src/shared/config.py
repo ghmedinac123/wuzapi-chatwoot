@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     
     # Celery
     USE_CELERY: bool = False
+    # ============= WUZAPI SESSION MANAGER =============
+
+    WUZAPI_SESSION_CONTACT_NAME: str = "🤖 WuzAPI Bot"
+    WUZAPI_SESSION_SOURCE_ID: str = "wuzapi-session-manager"
     
     class Config:
         env_file = ".env"
